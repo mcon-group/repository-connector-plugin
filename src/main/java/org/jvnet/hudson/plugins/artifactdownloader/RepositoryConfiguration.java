@@ -107,7 +107,9 @@ public class RepositoryConfiguration extends GlobalConfiguration implements Seri
         File result = new File(localRepositoryLocation);
         if (!result.exists()) {
             log.fine("create local repo directory: " + result.getAbsolutePath());
-            result.mkdirs();
+            if(!result.mkdirs()) {
+            	throw new RuntimeException("unable to create tmp dir!");
+            }
         }
         return result;
     }
@@ -125,7 +127,7 @@ public class RepositoryConfiguration extends GlobalConfiguration implements Seri
         return repos;
     }
 
-    public static class ValueComparator implements Comparator<String> {
+    public static class ValueComparator implements Comparator<String>, Serializable {
 
         Map<String, Double> base;
         public ValueComparator(Map<String, Double> base) {

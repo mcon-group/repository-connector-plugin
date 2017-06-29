@@ -53,4 +53,18 @@ public class VersionParameterValue extends StringParameterValue {
         sb.append(']');
         return sb.toString();
     }
+    
+    @Override
+    public boolean equals(Object obj) {
+    	if(obj instanceof VersionParameterValue) {
+    		return ((VersionParameterValue)obj).toString().compareTo(toString())==0;
+    	}
+    	return super.equals(obj);
+    }
+    
+    @Override
+    public int hashCode() {
+    	return toString().hashCode();
+    }
+    
 }

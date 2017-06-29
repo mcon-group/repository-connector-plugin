@@ -11,10 +11,11 @@ import java.util.logging.Logger;
 
 import javax.servlet.ServletException;
 
+import org.apache.commons.io.IOUtils;
 import org.eclipse.aether.resolution.VersionRangeResolutionException;
 import org.eclipse.aether.version.Version;
 import org.jvnet.hudson.plugins.artifactdownloader.aether.RepositoryConnector;
-import org.jvnet.hudson.plugins.repositoryconnector.Messages;
+import org.jvnet.hudson.plugins.artifactdownloader.Messages;
 import org.kohsuke.stapler.DataBoundConstructor;
 import org.kohsuke.stapler.QueryParameter;
 import org.kohsuke.stapler.StaplerRequest;
@@ -56,25 +57,36 @@ public class VersionParameterDefinition extends SimpleParameterDefinition {
         }
     }
 
+    private RepositoryConfig getRepoById(String id) {
+        return RepositoryConfiguration.get().getRepositoryMap().get(id);
+    }
+
     @Exported
     public List<String> getChoices() {
     	List<String> versionStrings = new ArrayList<String>();
-    	/**
+    	RepositoryConnector rc = null;
     	try {
-	        RepositoryConfig r = DESCRIPTOR.getRepo(repoid);
-	        File localRepo = RepositoryConfiguration.get().getLocalRepoPath();
-	        RepositoryConnector rc = new RepositoryConnector(System.out, Collections.singletonList(r), localRepo);
+
+        	RepositoryConfig rConf = getRepoById(repoid);
+        	if(rConf==null) {
+        		throw new RuntimeException("invalid repo id: "+repoid);
+        	}
+    		
+    		rc = new RepositoryConnector(System.out, Collections.singletonList(rConf));
             List<Version> versions = rc.listVersions(groupid, artifactid, null, null, null);
             for (Version version : versions) {
                 versionStrings.add(version.toString());
             }
-        } catch (VersionRangeResolutionException ex) {
+        } catch (Exception ex) {
             log.log(Level.SEVERE, "Could not determine versions", ex);
-        }
+            versionStrings.add("Could not determine versions ("+ex.getMessage()+")");
+
+        } finally {
+			IOUtils.closeQuietly(rc);
+		}
     	if (!versionStrings.isEmpty()) {
     		Collections.reverse(versionStrings);
-        }
-        **/
+        } 
         return versionStrings;
     }
 
@@ -146,20 +158,6 @@ public class VersionParameterDefinition extends SimpleParameterDefinition {
 
         @Override
         public boolean configure(StaplerRequest req, JSONObject formData) {
-            if (formData.has("repo")) {
-                try {
-                    List l = JSONArray.toList(
-                            formData.getJSONArray("repo"), RepositoryConfig.class);
-                    // TODO: ???
-                } catch (JSONException ex) {
-                    RepositoryConfig r = (RepositoryConfig) JSONObject.toBean(
-                            formData.getJSONObject("repo"), RepositoryConfig.class);
-                    // TODO: ???
-                }
-            } else {
-                // TODO: Should not happen
-            }
-
             save();
             return true;
         }

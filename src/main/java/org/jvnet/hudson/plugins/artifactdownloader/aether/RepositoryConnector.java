@@ -1,5 +1,6 @@
 package org.jvnet.hudson.plugins.artifactdownloader.aether;
 
+import java.io.Closeable;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
@@ -8,6 +9,7 @@ import java.io.PrintStream;
 import java.util.ArrayList;
 import java.util.List;
 
+import org.apache.commons.io.FileUtils;
 import org.apache.commons.io.IOUtils;
 import org.apache.commons.lang.StringUtils;
 import org.apache.maven.repository.internal.DefaultVersionResolver;
@@ -41,16 +43,30 @@ import org.eclipse.aether.version.Version;
 import org.jvnet.hudson.plugins.artifactdownloader.ArtifactConfig;
 import org.jvnet.hudson.plugins.artifactdownloader.RepositoryConfig;
 
-public class RepositoryConnector {
+public class RepositoryConnector implements Closeable {
 
 	private List<RepositoryConfig> repositoryConfigs = new ArrayList<RepositoryConfig>();
 	private final PrintStream logger;
 
-	public RepositoryConnector(PrintStream logger, List<RepositoryConfig> repositoryConfigs) {
+	private File tmpRepo;
+	
+	public RepositoryConnector(PrintStream logger, List<RepositoryConfig> repositoryConfigs) throws IOException {
 		this.logger = logger == null ? System.out : logger;
 		this.repositoryConfigs = repositoryConfigs;
+		tmpRepo = File.createTempFile("local_repo_", "");
+		if(!tmpRepo.delete()) {
+			throw new IOException("failed to create tmp file: "+tmpRepo.getAbsolutePath());
+		}
+		if(!tmpRepo.mkdirs()) {
+			throw new IOException("failed to create tmp file!");
+		}
 	}
 
+	@Override
+	public void close() throws IOException {
+		FileUtils.deleteDirectory(tmpRepo);
+	}
+	
 	private RepositorySystem createRepoSystem() {
 		DefaultServiceLocator locator = MavenRepositorySystemUtils.newServiceLocator();
 		locator.addService(RepositoryConnectorFactory.class, BasicRepositoryConnectorFactory.class);
@@ -73,10 +89,7 @@ public class RepositoryConnector {
 
 	private RepositorySystemSession newSession(RepositorySystem system) throws IOException {
 		DefaultRepositorySystemSession session = MavenRepositorySystemUtils.newSession();
-		File f = File.createTempFile("local_repo_", "");
-		f.delete();
-		f.mkdirs();
-		LocalRepository localRepo = new LocalRepository(f);
+		LocalRepository localRepo = new LocalRepository(tmpRepo);
 		session.setTransferListener(new TransferListener() {
 			
 			@Override
@@ -120,7 +133,11 @@ public class RepositoryConnector {
 	private List<RemoteRepository> getRepositories() {
 		List<RemoteRepository> out = new ArrayList<RemoteRepository>();
 		for(RepositoryConfig conf : repositoryConfigs) {
-			RemoteRepository.Builder builder = new RemoteRepository.Builder(conf.getId(),conf.getType(),conf.getUrl());
+			RemoteRepository.Builder builder = new RemoteRepository.Builder(
+					conf.getId(),
+					conf.getType(),
+					conf.getUrl()
+			);
 			if(!StringUtils.isEmpty(conf.getUser())) {
 				Authentication auth = new AuthenticationBuilder().addUsername(conf.getUser()).addPassword(conf.getPassword()).build();
 				builder = builder.setAuthentication(auth);
@@ -135,12 +152,21 @@ public class RepositoryConnector {
 		RepositorySystemSession session = newSession(system);
 
 		Artifact artifact = new DefaultArtifact( groupId+":"+artifactId+":[0,)" );
+		
+		logger.println("resolving artigfact: "+artifact);
+		
 		VersionRangeRequest rangeRequest = new VersionRangeRequest();
         rangeRequest.setArtifact( artifact );
+
+        List<RemoteRepository> repos = getRepositories();
+        for(RemoteRepository rr : repos) {
+    		logger.println(" - using repository: "+rr.getUrl());
+        }
         
-        rangeRequest.setRepositories(getRepositories());
+        rangeRequest.setRepositories(repos);
 
         VersionRangeResult rangeResult = system.resolveVersionRange( session, rangeRequest );
+		logger.println("versions found: "+rangeResult.getVersions().size());
 		return rangeResult.getVersions();
 	}
 
@@ -153,6 +179,8 @@ public class RepositoryConnector {
 		boolean out = true;
 		
 		for(ArtifactConfig ac : artifacts) {
+			logger.println("downloading artifact: "+ac);
+			
 			FileInputStream fisIn = null;
 			FileOutputStream fosOut = null;
 			try {
@@ -160,8 +188,12 @@ public class RepositoryConnector {
 				request.setArtifact(new DefaultArtifact(ac.getGroupId(),ac.getArtifactId(),ac.getExtension(),ac.getVersion()));
 				request.setRepositories(remotes);
 				ArtifactResult result = system.resolveArtifact(session, request);
+
 				File fIn = result.getArtifact().getFile(); 
 				File fOut = new File(ac.getTargetFileName());
+				
+				logger.println("copy artifact: "+fIn.getAbsolutePath()+" -> "+fOut.getAbsolutePath());
+				
 				fisIn = new FileInputStream(fIn);
 				fosOut = new FileOutputStream(fOut);
 				IOUtils.copy(fisIn,fosOut);
@@ -170,8 +202,8 @@ public class RepositoryConnector {
 				e.printStackTrace(logger);
 				out = false;
 			} finally {
-				try {fisIn.close();} catch (Exception e2) {}
-				try {fosOut.close();} catch (Exception e2) {}
+				try {fisIn.close();} catch (Exception e2) { logger.println("unable to close file! (ignoring)");}
+				try {fosOut.close();} catch (Exception e2) {logger.println("unable to close file! (ignoring)");}
 			}
 		}
 		return out;

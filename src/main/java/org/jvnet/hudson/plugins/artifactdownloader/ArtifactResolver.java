@@ -3,13 +3,17 @@ package org.jvnet.hudson.plugins.artifactdownloader;
 import java.io.File;
 import java.io.PrintStream;
 import java.io.Serializable;
+import java.util.ArrayList;
 import java.util.Collection;
+import java.util.Collections;
 import java.util.List;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
+import org.apache.commons.io.IOUtils;
 import org.apache.commons.lang.StringUtils;
-import org.jvnet.hudson.plugins.repositoryconnector.Messages;
+import org.jenkinsci.plugins.tokenmacro.TokenMacro;
+import org.jvnet.hudson.plugins.artifactdownloader.aether.RepositoryConnector;
 import org.kohsuke.stapler.DataBoundConstructor;
 import org.kohsuke.stapler.StaplerRequest;
 
@@ -28,7 +32,7 @@ import net.sf.json.JSONObject;
 /**
  * This builder allows to resolve artifacts from a repository and copy it to any location.
  * 
- * @author domi
+ * @author domi, rm
  */
 public class ArtifactResolver extends Builder implements Serializable {
 
@@ -38,35 +42,19 @@ public class ArtifactResolver extends Builder implements Serializable {
 
     private static final String DEFAULT_TARGET = "";
 
+    public String repoid;
     public String targetDirectory;
     public List<ArtifactConfig> artifacts;
-    public boolean failOnError = true;
-    public boolean enableRepoLogging = true;
-    public String snapshotUpdatePolicy;
-    public String releaseUpdatePolicy;
-    public String snapshotChecksumPolicy;
-    public String releaseChecksumPolicy;
     
     @DataBoundConstructor
     public ArtifactResolver(
+    		String repoid, 
     		String targetDirectory, 
-    		List<ArtifactConfig> artifacts, 
-    		boolean failOnError, 
-    		boolean enableRepoLogging, 
-    		String snapshotUpdatePolicy,
-            String snapshotChecksumPolicy, 
-            String releaseUpdatePolicy, 
-            String releaseChecksumPolicy) {
-    	/**
-        this.artifacts = artifacts != null ? artifacts : new ArrayList<Artifact>();
+    		List<ArtifactConfig> artifacts
+    	) {
+        this.artifacts = artifacts != null ? artifacts : new ArrayList<ArtifactConfig>();
         this.targetDirectory = StringUtils.isBlank(targetDirectory) ? DEFAULT_TARGET : targetDirectory;
-        this.failOnError = failOnError;
-        this.enableRepoLogging = enableRepoLogging;
-        this.releaseUpdatePolicy = releaseUpdatePolicy;
-        this.releaseChecksumPolicy = RepositoryPolicy.CHECKSUM_POLICY_WARN;
-        this.snapshotUpdatePolicy = snapshotUpdatePolicy;
-        this.snapshotChecksumPolicy = RepositoryPolicy.CHECKSUM_POLICY_WARN;
-        **/
+        this.repoid = repoid;
     }
 
     public String getTargetDirectory() {
@@ -74,18 +62,9 @@ public class ArtifactResolver extends Builder implements Serializable {
     }
 
     public boolean failOnError() {
-        return failOnError;
+        return true;
     }
 
-    public boolean enableRepoLogging() {
-        return enableRepoLogging;
-    }
-
-    /**
-     * gets the artifacts
-     * 
-     * @return
-     */
     public List<ArtifactConfig> getArtifacts() {
         return artifacts;
     }
@@ -94,40 +73,51 @@ public class ArtifactResolver extends Builder implements Serializable {
     public boolean perform(AbstractBuild<?, ?> build, Launcher launcher, BuildListener listener) {
 
         final PrintStream logger = listener.getLogger();
-        final Collection<RepositoryConfig> repositories = RepositoryConfiguration.get().getRepos();
 
-        File localRepo = RepositoryConfiguration.get().getLocalRepoPath();
-        boolean failed = download(build, listener, logger, repositories, localRepo);
+        RepositoryConnector rc = null;
+        
+        
+        try {
 
-        if (failed && failOnError) {
-            return false;
-        }
-        return true;
+        	RepositoryConfig rConf = getRepoById(repoid);
+        	if(rConf==null) {
+        		throw new RuntimeException("invalid repo id: "+repoid);
+        	}
+        	
+        	rc = new RepositoryConnector(logger, Collections.singletonList(rConf));	
+        	List<ArtifactConfig> resolvedArtifacts = new ArrayList<ArtifactConfig>();
+        	
+        	for(ArtifactConfig ac : getArtifacts()) {
+        		
+        		String groupId = TokenMacro.expandAll(build, listener, ac.getGroupId()); 
+        		String artifactId = TokenMacro.expandAll(build, listener, ac.getArtifactId());
+        		String version = checkVersionOverride(build, listener, groupId, artifactId, ac.getVersion());
+        		String extension = TokenMacro.expandAll(build, listener, ac.getExtension());
+        		
+        		String targetDirectory = TokenMacro.expandAll(build, listener, getTargetDirectory());
+        		if(StringUtils.isEmpty(targetDirectory)) {
+        		} else if (!targetDirectory.endsWith("/")) {
+        			targetDirectory = targetDirectory+"/";
+        		}
+        		
+        		String targetFilename = new File(targetDirectory+TokenMacro.expandAll(build, listener, ac.getTargetFileName())).getAbsolutePath();
+        		
+        		ArtifactConfig acNew = new ArtifactConfig(groupId, artifactId, extension, version, extension, targetFilename);
+                resolvedArtifacts.add(acNew);
+                
+        	}
+        	
+        	rc.downloadArtifacts(resolvedArtifacts);
+        	return true;
+        } catch (Exception e) {
+            return logError("Exception: ", logger, e);
+        } finally {
+			IOUtils.closeQuietly(rc);
+		}
     }
 
-    private boolean download(AbstractBuild<?, ?> build, BuildListener listener, final PrintStream logger, final Collection<RepositoryConfig> repositories, File localRepository) {
-
-    	boolean hasError = false;
-        for (ArtifactConfig a : artifacts) {
-        	/**
-            try {
-
-                final String classifier = TokenMacro.expandAll(build, listener, a.getClassifier());
-                final String artifactId = TokenMacro.expandAll(build, listener, a.getArtifactId());
-                final String groupId = TokenMacro.expandAll(build, listener, a.getGroupId());
-                final String extension = TokenMacro.expandAll(build, listener, a.getExtension());
-                final String targetFileName = TokenMacro.expandAll(build, listener, a.getTargetFileName());
-                final String expandedTargetDirectory = TokenMacro.expandAll(build, listener, getTargetDirectory());
-
-                String version = TokenMacro.expandAll(build, listener, a.getVersion());
-                version = checkVersionOverride(build, listener, groupId, artifactId, version);
-
-            } catch (Exception e) {
-                hasError = logError("failed to expand tokens for " + a, logger, e);
-            }
-			**/
-        }
-        return hasError;
+    private RepositoryConfig getRepoById(String id) {
+        return RepositoryConfiguration.get().getRepositoryMap().get(id);
     }
 
     /**
@@ -187,8 +177,30 @@ public class ArtifactResolver extends Builder implements Serializable {
             return Messages.ArtifactResolver();
         }
 
+        public RepositoryConfig getRepo(String id) {
+            RepositoryConfig repo = null;
+            RepositoryConfiguration repoConfig = RepositoryConfiguration.get();
+            if (repoConfig != null) {
+                repo = repoConfig.getRepositoryMap().get(id);
+                log.fine("getRepo(" + id + ")=" + repo);
+            }
+            return repo;
+        }
+
+        public Collection<RepositoryConfig> getRepos() {
+            Collection<RepositoryConfig> repos = null;
+            RepositoryConfiguration repoConfig = RepositoryConfiguration.get();
+            if (repoConfig != null) {
+                repos = repoConfig.getRepos();
+                log.fine("getRepos()=" + repos);
+            }
+            return repos;
+        }
+        
+        
         @Override
         public boolean configure(StaplerRequest req, JSONObject formData) throws Descriptor.FormException {
+            save();
             return true;
         }
     }
