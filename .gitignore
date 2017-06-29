@@ -9,4 +9,5 @@
 nb-configuration.xml
 nbactions.xml
 repository-connector.iml
+pom.xml.versionsBackup
 .idea
