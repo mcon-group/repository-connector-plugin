@@ -1,4 +1,4 @@
-package org.jvnet.hudson.plugins.repositoryconnector;
+package org.jvnet.hudson.plugins.artifactdownloader;
 
 import hudson.model.StringParameterValue;
 

@@ -1,4 +1,4 @@
-package org.jvnet.hudson.plugins.repositoryconnector;
+package org.jvnet.hudson.plugins.artifactdownloader;
 
 import java.io.Serializable;
 
@@ -10,7 +10,7 @@ import org.kohsuke.stapler.DataBoundConstructor;
  * @author domi
  * 
  */
-public class Artifact implements Serializable {
+public class ArtifactConfig implements Serializable {
 
    private static final long serialVersionUID = 1L;
 
@@ -22,7 +22,7 @@ public class Artifact implements Serializable {
     private final String targetFileName;
 
    @DataBoundConstructor
-    public Artifact(String groupId, String artifactId, String classifier, String version, String extension, String targetFileName) {
+    public ArtifactConfig(String groupId, String artifactId, String classifier, String version, String extension, String targetFileName) {
         this.groupId = groupId;
         this.artifactId = artifactId;
         this.classifier = classifier == null ? "" : classifier;

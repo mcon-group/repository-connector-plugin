@@ -1,10 +1,4 @@
-package org.jvnet.hudson.plugins.repositoryconnector;
-
-import hudson.Extension;
-import hudson.model.ParameterValue;
-import hudson.model.SimpleParameterDefinition;
-import hudson.model.StringParameterValue;
-import hudson.util.FormValidation;
+package org.jvnet.hudson.plugins.artifactdownloader;
 
 import java.io.File;
 import java.io.IOException;
@@ -17,20 +11,25 @@ import java.util.logging.Logger;
 
 import javax.servlet.ServletException;
 
-import net.sf.json.JSONArray;
-import net.sf.json.JSONException;
-import net.sf.json.JSONObject;
-
-import org.jvnet.hudson.plugins.repositoryconnector.aether.Aether;
+import org.eclipse.aether.resolution.VersionRangeResolutionException;
+import org.eclipse.aether.version.Version;
+import org.jvnet.hudson.plugins.artifactdownloader.aether.RepositoryConnector;
+import org.jvnet.hudson.plugins.repositoryconnector.Messages;
 import org.kohsuke.stapler.DataBoundConstructor;
 import org.kohsuke.stapler.QueryParameter;
 import org.kohsuke.stapler.StaplerRequest;
 import org.kohsuke.stapler.export.Exported;
-import org.sonatype.aether.resolution.VersionRangeResolutionException;
-import org.sonatype.aether.version.Version;
 
-public class VersionParameterDefinition extends
-        SimpleParameterDefinition {
+import hudson.Extension;
+import hudson.model.ParameterValue;
+import hudson.model.SimpleParameterDefinition;
+import hudson.model.StringParameterValue;
+import hudson.util.FormValidation;
+import net.sf.json.JSONArray;
+import net.sf.json.JSONException;
+import net.sf.json.JSONObject;
+
+public class VersionParameterDefinition extends SimpleParameterDefinition {
 
     private static final Logger log = Logger.getLogger(VersionParameterDefinition.class.getName());
 
@@ -41,7 +40,7 @@ public class VersionParameterDefinition extends
 
     @DataBoundConstructor
     public VersionParameterDefinition(String repoid, String groupid, String artifactid, String propertyName, String description) {
-        super((propertyName != null && !propertyName.isEmpty()) ? propertyName : groupid + "." + artifactid, description);
+        super(groupid + "." + artifactid, description);
         this.repoid = repoid;
         this.groupid = groupid;
         this.artifactid = artifactid;
@@ -51,9 +50,7 @@ public class VersionParameterDefinition extends
     @Override
     public VersionParameterDefinition copyWithDefaultValue(ParameterValue defaultValue) {
         if (defaultValue instanceof StringParameterValue) {
-            // TODO: StringParameterValue value = (StringParameterValue) defaultValue;
-            return new VersionParameterDefinition(getRepoid(), "",
-                    "", "", getDescription());
+            return new VersionParameterDefinition(getRepoid(), "", "", "", getDescription());
         } else {
             return this;
         }
@@ -61,27 +58,23 @@ public class VersionParameterDefinition extends
 
     @Exported
     public List<String> getChoices() {
-        Repository r = DESCRIPTOR.getRepo(repoid);
-        List<String> versionStrings = new ArrayList<String>();
-        if (r != null) {
-            File localRepo = RepositoryConfiguration.get().getLocalRepoPath();
-            Aether aether = new Aether(DESCRIPTOR.getRepos(repoid), localRepo);
-            try {
-                List<Version> versions = aether.resolveVersions(groupid, artifactid);
-                for (Version version : versions) {
-                    versionStrings.add(version.toString());
-                }
-            } catch (VersionRangeResolutionException ex) {
-                log.log(Level.SEVERE, "Could not determine versions", ex);
+    	List<String> versionStrings = new ArrayList<String>();
+    	/**
+    	try {
+	        RepositoryConfig r = DESCRIPTOR.getRepo(repoid);
+	        File localRepo = RepositoryConfiguration.get().getLocalRepoPath();
+	        RepositoryConnector rc = new RepositoryConnector(System.out, Collections.singletonList(r), localRepo);
+            List<Version> versions = rc.listVersions(groupid, artifactid, null, null, null);
+            for (Version version : versions) {
+                versionStrings.add(version.toString());
             }
-            if (!versionStrings.isEmpty()) {
-                // reverseorder to have the latest versions on top of the list
-                Collections.reverse(versionStrings);
-                // add the default parameters
-                //versionStrings.add(0, "LATEST");
-                //versionStrings.add(0, "RELEASE");
-            }
+        } catch (VersionRangeResolutionException ex) {
+            log.log(Level.SEVERE, "Could not determine versions", ex);
         }
+    	if (!versionStrings.isEmpty()) {
+    		Collections.reverse(versionStrings);
+        }
+        **/
         return versionStrings;
     }
 
@@ -112,7 +105,8 @@ public class VersionParameterDefinition extends
 
     @Override
     public ParameterValue createValue(String version) {
-        return new VersionParameterValue(groupid, artifactid, propertyName, version);
+        // this should never be called
+        throw new RuntimeException("Not implemented");
     }
 
     @Override
@@ -130,8 +124,8 @@ public class VersionParameterDefinition extends
             load();
         }
 
-        public Repository getRepo(String id) {
-            Repository repo = null;
+        public RepositoryConfig getRepo(String id) {
+            RepositoryConfig repo = null;
             RepositoryConfiguration repoConfig = RepositoryConfiguration.get();
             if (repoConfig != null) {
                 repo = repoConfig.getRepositoryMap().get(id);
@@ -140,17 +134,11 @@ public class VersionParameterDefinition extends
             return repo;
         }
 
-        public Collection<Repository> getRepos(String repoId) {
-            List<Repository> repos = new ArrayList<>();
+        public Collection<RepositoryConfig> getRepos() {
+            Collection<RepositoryConfig> repos = null;
             RepositoryConfiguration repoConfig = RepositoryConfiguration.get();
-            if(repoId!=null && repoId.length()>0) {
-            	for(Repository repo : repoConfig.getRepos()) {
-            		if(repo.getId().compareTo(repoId)==0) {
-            			repos.add(repo);
-            		}
-            	}
-            } else {
-                repos.addAll(repoConfig.getRepos());
+            if (repoConfig != null) {
+                repos = repoConfig.getRepos();
                 log.fine("getRepos()=" + repos);
             }
             return repos;
@@ -160,11 +148,12 @@ public class VersionParameterDefinition extends
         public boolean configure(StaplerRequest req, JSONObject formData) {
             if (formData.has("repo")) {
                 try {
-                    List l = JSONArray.toList(formData.getJSONArray("repo"), Repository.class);
+                    List l = JSONArray.toList(
+                            formData.getJSONArray("repo"), RepositoryConfig.class);
                     // TODO: ???
                 } catch (JSONException ex) {
-                    Repository r = (Repository) JSONObject.toBean(
-                            formData.getJSONObject("repo"), Repository.class);
+                    RepositoryConfig r = (RepositoryConfig) JSONObject.toBean(
+                            formData.getJSONObject("repo"), RepositoryConfig.class);
                     // TODO: ???
                 }
             } else {
@@ -207,15 +196,15 @@ public class VersionParameterDefinition extends
         private FormValidation checkPath(String artifactid, String groupid,
                 String repoid) {
             FormValidation result = FormValidation.ok();
-            File localRepo = RepositoryConfiguration.get().getLocalRepoPath();
-            Aether aether = new Aether(DESCRIPTOR.getRepos(), localRepo);
             try {
-                List<Version> versions = aether.resolveVersions(groupid, artifactid);
+            	RepositoryConfig r = DESCRIPTOR.getRepo(repoid);
+            	RepositoryConnector rc = new RepositoryConnector(System.out, Collections.singletonList(r));
+            	List<Version> versions = rc.listVersions(groupid, artifactid, null, null, null);
                 if (versions.isEmpty()) {
                     result = FormValidation.error(Messages.NoVersions() + " " + groupid + "." + artifactid);
                     log.log(Level.FINE, "No versions found for " + groupid + "." + artifactid);
                 }
-            } catch (VersionRangeResolutionException ex) {
+            } catch (Exception ex) {
                 result = FormValidation.error(Messages.NoVersions() + " " + groupid + "." + artifactid);
                 log.log(Level.SEVERE, "Could not determine versions for " + groupid + "." + artifactid, ex);
             }

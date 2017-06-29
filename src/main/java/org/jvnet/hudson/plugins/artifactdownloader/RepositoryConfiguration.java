@@ -1,4 +1,4 @@
-package org.jvnet.hudson.plugins.repositoryconnector;
+package org.jvnet.hudson.plugins.artifactdownloader;
 
 import hudson.Extension;
 import hudson.model.Descriptor;
@@ -30,12 +30,12 @@ public class RepositoryConfiguration extends GlobalConfiguration implements Seri
 
     private static Logger log = Logger.getLogger(RepositoryConfiguration.class.getName());
 
-    private static final Map<String, Repository> DEFAULT_REPOS = new HashMap<String, Repository>();
+    private static final Map<String, RepositoryConfig> DEFAULT_REPOS = new HashMap<String, RepositoryConfig>();
     static {
-        DEFAULT_REPOS.put("central", new Repository("central", "default", "http://repo1.maven.org/maven2", null, null, false));
+        DEFAULT_REPOS.put("central", new RepositoryConfig("central", "default", "http://repo1.maven.org/maven2", null, null, false));
     }
 
-    private final Map<String, Repository> repos = new HashMap<String, Repository>();
+    private final Map<String, RepositoryConfig> repos = new HashMap<String, RepositoryConfig>();
 
     private String localRepository = "";
 
@@ -82,7 +82,7 @@ public class RepositoryConfiguration extends GlobalConfiguration implements Seri
      * 
      */
     private void addRepo(StaplerRequest req, JSONObject jsonObject) {
-        final Repository repo = req.bindJSON(Repository.class, jsonObject);
+        final RepositoryConfig repo = req.bindJSON(RepositoryConfig.class, jsonObject);
         if (repo != null) {
             if (!StringUtils.isBlank(repo.getUrl())) {
                 log.fine("Adding repo " + repo);
@@ -113,14 +113,14 @@ public class RepositoryConfiguration extends GlobalConfiguration implements Seri
     }
 
 
-    public Collection<Repository> getRepos() {
-        List<Repository> r = new ArrayList<Repository>();
+    public Collection<RepositoryConfig> getRepos() {
+        List<RepositoryConfig> r = new ArrayList<RepositoryConfig>();
         r.addAll(repos.values());
         Collections.sort(r);
         log.fine("repos=" + r);
         return r;
     }
-    public Map<String, Repository> getRepositoryMap() {
+    public Map<String, RepositoryConfig> getRepositoryMap() {
         log.fine("reposmap=" + repos);
         return repos;
     }

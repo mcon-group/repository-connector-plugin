@@ -1,15 +1,4 @@
-package org.jvnet.hudson.plugins.repositoryconnector;
-
-import hudson.Extension;
-import hudson.FilePath;
-import hudson.Launcher;
-import hudson.model.BuildListener;
-import hudson.model.AbstractBuild;
-import hudson.model.AbstractProject;
-import hudson.tasks.BuildStepDescriptor;
-import hudson.tasks.BuildStepMonitor;
-import hudson.tasks.Notifier;
-import hudson.tasks.Publisher;
+package org.jvnet.hudson.plugins.artifactdownloader;
 
 import java.io.BufferedReader;
 import java.io.File;
@@ -24,16 +13,21 @@ import java.util.List;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
-import net.sf.json.JSONObject;
-
 import org.apache.commons.io.FileUtils;
-import org.jenkinsci.plugins.tokenmacro.TokenMacro;
-import org.jvnet.hudson.plugins.repositoryconnector.aether.Aether;
+import org.jvnet.hudson.plugins.repositoryconnector.Messages;
 import org.kohsuke.stapler.DataBoundConstructor;
 import org.kohsuke.stapler.StaplerRequest;
-import org.sonatype.aether.deployment.DeploymentException;
-import org.sonatype.aether.util.artifact.DefaultArtifact;
-import org.sonatype.aether.util.artifact.SubArtifact;
+
+import hudson.Extension;
+import hudson.Launcher;
+import hudson.model.AbstractBuild;
+import hudson.model.AbstractProject;
+import hudson.model.BuildListener;
+import hudson.tasks.BuildStepDescriptor;
+import hudson.tasks.BuildStepMonitor;
+import hudson.tasks.Notifier;
+import hudson.tasks.Publisher;
+import net.sf.json.JSONObject;
 
 /**
  * This builder allows to resolve artifacts from a repository and copy it to any location.
@@ -50,12 +44,12 @@ public class ArtifactDeployer extends Notifier implements Serializable {
     public boolean enableRepoLogging = true;
     public final String repoId;
     public final String snapshotRepoId;
-    public List<Artifact> artifacts;
+    public List<ArtifactConfig> artifacts;
 
     @DataBoundConstructor
-    public ArtifactDeployer(List<Artifact> artifacts, String repoId, String snapshotRepoId, UserPwd overwriteSecurity, boolean enableRepoLogging) {
+    public ArtifactDeployer(List<ArtifactConfig> artifacts, String repoId, String snapshotRepoId, UserPwd overwriteSecurity, boolean enableRepoLogging) {
         this.enableRepoLogging = enableRepoLogging;
-        this.artifacts = artifacts != null ? artifacts : new ArrayList<Artifact>();
+        this.artifacts = artifacts != null ? artifacts : new ArrayList<ArtifactConfig>();
         this.repoId = repoId;
         this.snapshotRepoId = snapshotRepoId;
         this.overwriteSecurity = overwriteSecurity;
@@ -84,11 +78,11 @@ public class ArtifactDeployer extends Notifier implements Serializable {
         return null;
     }
 
-    public Collection<Repository> getRepos() {
+    public Collection<RepositoryConfig> getRepos() {
         return RepositoryConfiguration.get().getRepos();
     }
 
-    private Repository getRepoById(String id) {
+    private RepositoryConfig getRepoById(String id) {
         return RepositoryConfiguration.get().getRepositoryMap().get(id);
     }
 
@@ -104,62 +98,17 @@ public class ArtifactDeployer extends Notifier implements Serializable {
 
         final PrintStream logger = listener.getLogger();
 
-        Aether aether = new Aether(new File(RepositoryConfiguration.get().getLocalRepository()), logger, enableRepoLogging);
-
         try {
-            for (Artifact a : artifacts) {
-
+            for (ArtifactConfig a : artifacts) {
+            	/**
                 final String version = TokenMacro.expandAll(build, listener, a.getVersion());
                 final String classifier = TokenMacro.expandAll(build, listener, a.getClassifier());
                 final String artifactId = TokenMacro.expandAll(build, listener, a.getArtifactId());
                 final String groupId = TokenMacro.expandAll(build, listener, a.getGroupId());
                 final String packaging = TokenMacro.expandAll(build, listener, a.getExtension());
                 final String targetFileName = TokenMacro.expandAll(build, listener, a.getTargetFileName());
-
-                Artifact aTmp = new Artifact(groupId, artifactId, classifier, version, packaging, targetFileName);
-
-                String aTmpFileName = aTmp.getTargetFileName();
-                FilePath source = new FilePath(build.getWorkspace(), aTmpFileName);
-                String f = new File(aTmpFileName).getName();
-                int dotPos = f.lastIndexOf(".");
-                String extension = f.substring(dotPos + 1);
-                final File targetFile = File.createTempFile(f, "." + extension);
-                FilePath target = new FilePath(targetFile);
-
-                logger.println("INFO: copy source " + source.toURI() + " to master " + target.toURI());
-                source.copyTo(target);
-
-                org.sonatype.aether.artifact.Artifact artifact = new DefaultArtifact(groupId, artifactId, classifier, extension, version);
-                logger.println("INFO: deploy artifact " + aTmp);
-                artifact = artifact.setFile(targetFile);
-                org.sonatype.aether.artifact.Artifact pom = new SubArtifact(artifact, "", "pom");
-                final File tmpPom = getTempPom(aTmp);
-                pom = pom.setFile(tmpPom);
-
-                final String tmpRepoId = version.contains("SNAPSHOT") ? snapshotRepoId : repoId;
-                Repository repo = getRepoById(tmpRepoId);
-                logger.println("INFO: deploy to repository " + repo);
-                if (isOverwriteSecurity()) {
-                    logger.println("INFO: define repo access security...");
-                    String tmpuser = TokenMacro.expandAll(build, listener, overwriteSecurity.user);
-                    String tmppwd = TokenMacro.expandAll(build, listener, overwriteSecurity.password);
-                    repo = new Repository(repo.getId(), repo.getType(), repo.getUrl(), tmpuser, tmppwd, repo.isRepositoryManager());
-                }
-
-                aether.install(artifact, pom);
-                aether.deploy(repo, artifact, pom);
-
-                // clean the resources
-                targetFile.delete();
-                tmpPom.delete();
+                **/
             }
-        } catch (DeploymentException e) {
-            logger.println("ERROR: possible causes: 1. in case of a SNAPSHOT deployment: does your remote repository allow SNAPSHOT deployments?, 2. in case of a release dpeloyment: is this version of the artifact already deployed then does your repository allow updating artifacts?");
-            return logError("DeploymentException: ", logger, e);
-        } catch (IOException e) {
-            return logError("IOException: ", logger, e);
-        } catch (InterruptedException e) {
-            return logError("InterruptedException: ", logger, e);
         } catch (Exception e) {
             return logError("Exception: ", logger, e);
         }
@@ -198,7 +147,7 @@ public class ArtifactDeployer extends Notifier implements Serializable {
         }
     }
 
-    private File getTempPom(Artifact artifact) {
+    private File getTempPom(ArtifactConfig artifact) {
         File tmpPom = null;
         try {
             final String preparedPom = this.preparedPom(artifact);
@@ -210,7 +159,7 @@ public class ArtifactDeployer extends Notifier implements Serializable {
         return tmpPom;
     }
 
-    private String preparedPom(Artifact artifact) {
+    private String preparedPom(ArtifactConfig artifact) {
         String pomContent = null;
         try {
             final InputStream stream = this.getClass().getResourceAsStream("/org/jvnet/hudson/plugins/repositoryconnector/ArtifactDeployer/pom.tmpl");

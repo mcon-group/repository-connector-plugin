@@ -1,39 +1,29 @@
-package org.jvnet.hudson.plugins.repositoryconnector;
-
-import hudson.Extension;
-import hudson.FilePath;
-import hudson.Launcher;
-import hudson.model.BuildListener;
-import hudson.model.AbstractBuild;
-import hudson.model.AbstractProject;
-import hudson.model.Descriptor;
-import hudson.model.ParameterValue;
-import hudson.model.ParametersAction;
-import hudson.tasks.BuildStepDescriptor;
-import hudson.tasks.Builder;
+package org.jvnet.hudson.plugins.artifactdownloader;
 
 import java.io.File;
-import java.io.IOException;
 import java.io.PrintStream;
 import java.io.Serializable;
-import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
-import net.sf.json.JSONObject;
-
 import org.apache.commons.lang.StringUtils;
-import org.jenkinsci.plugins.tokenmacro.TokenMacro;
-import org.jvnet.hudson.plugins.repositoryconnector.aether.Aether;
-import org.jvnet.hudson.plugins.repositoryconnector.aether.AetherResult;
+import org.jvnet.hudson.plugins.repositoryconnector.Messages;
 import org.kohsuke.stapler.DataBoundConstructor;
 import org.kohsuke.stapler.StaplerRequest;
-import org.sonatype.aether.collection.DependencyCollectionException;
-import org.sonatype.aether.repository.RepositoryPolicy;
-import org.sonatype.aether.resolution.ArtifactResolutionException;
-import org.sonatype.aether.resolution.DependencyResolutionException;
+
+import hudson.Extension;
+import hudson.Launcher;
+import hudson.model.AbstractBuild;
+import hudson.model.AbstractProject;
+import hudson.model.BuildListener;
+import hudson.model.Descriptor;
+import hudson.model.ParameterValue;
+import hudson.model.ParametersAction;
+import hudson.tasks.BuildStepDescriptor;
+import hudson.tasks.Builder;
+import net.sf.json.JSONObject;
 
 /**
  * This builder allows to resolve artifacts from a repository and copy it to any location.
@@ -49,17 +39,25 @@ public class ArtifactResolver extends Builder implements Serializable {
     private static final String DEFAULT_TARGET = "";
 
     public String targetDirectory;
-    public List<Artifact> artifacts;
+    public List<ArtifactConfig> artifacts;
     public boolean failOnError = true;
     public boolean enableRepoLogging = true;
-    public final String snapshotUpdatePolicy;
-    public final String releaseUpdatePolicy;
-    public final String snapshotChecksumPolicy;
-    public final String releaseChecksumPolicy;
+    public String snapshotUpdatePolicy;
+    public String releaseUpdatePolicy;
+    public String snapshotChecksumPolicy;
+    public String releaseChecksumPolicy;
     
     @DataBoundConstructor
-    public ArtifactResolver(String targetDirectory, List<Artifact> artifacts, boolean failOnError, boolean enableRepoLogging, String snapshotUpdatePolicy,
-            String snapshotChecksumPolicy, String releaseUpdatePolicy, String releaseChecksumPolicy) {
+    public ArtifactResolver(
+    		String targetDirectory, 
+    		List<ArtifactConfig> artifacts, 
+    		boolean failOnError, 
+    		boolean enableRepoLogging, 
+    		String snapshotUpdatePolicy,
+            String snapshotChecksumPolicy, 
+            String releaseUpdatePolicy, 
+            String releaseChecksumPolicy) {
+    	/**
         this.artifacts = artifacts != null ? artifacts : new ArrayList<Artifact>();
         this.targetDirectory = StringUtils.isBlank(targetDirectory) ? DEFAULT_TARGET : targetDirectory;
         this.failOnError = failOnError;
@@ -68,6 +66,7 @@ public class ArtifactResolver extends Builder implements Serializable {
         this.releaseChecksumPolicy = RepositoryPolicy.CHECKSUM_POLICY_WARN;
         this.snapshotUpdatePolicy = snapshotUpdatePolicy;
         this.snapshotChecksumPolicy = RepositoryPolicy.CHECKSUM_POLICY_WARN;
+        **/
     }
 
     public String getTargetDirectory() {
@@ -87,7 +86,7 @@ public class ArtifactResolver extends Builder implements Serializable {
      * 
      * @return
      */
-    public List<Artifact> getArtifacts() {
+    public List<ArtifactConfig> getArtifacts() {
         return artifacts;
     }
 
@@ -95,7 +94,7 @@ public class ArtifactResolver extends Builder implements Serializable {
     public boolean perform(AbstractBuild<?, ?> build, Launcher launcher, BuildListener listener) {
 
         final PrintStream logger = listener.getLogger();
-        final Collection<Repository> repositories = RepositoryConfiguration.get().getRepos();
+        final Collection<RepositoryConfig> repositories = RepositoryConfiguration.get().getRepos();
 
         File localRepo = RepositoryConfiguration.get().getLocalRepoPath();
         boolean failed = download(build, listener, logger, repositories, localRepo);
@@ -106,15 +105,11 @@ public class ArtifactResolver extends Builder implements Serializable {
         return true;
     }
 
-    private boolean download(AbstractBuild<?, ?> build, BuildListener listener, final PrintStream logger, final Collection<Repository> repositories,
-            File localRepository) {
-        boolean hasError = false;
+    private boolean download(AbstractBuild<?, ?> build, BuildListener listener, final PrintStream logger, final Collection<RepositoryConfig> repositories, File localRepository) {
 
-        Aether aether = new Aether(repositories, localRepository, logger, enableRepoLogging, snapshotUpdatePolicy, snapshotChecksumPolicy, releaseUpdatePolicy,
-                releaseChecksumPolicy);
-
-        for (Artifact a : artifacts) {
-
+    	boolean hasError = false;
+        for (ArtifactConfig a : artifacts) {
+        	/**
             try {
 
                 final String classifier = TokenMacro.expandAll(build, listener, a.getClassifier());
@@ -127,38 +122,10 @@ public class ArtifactResolver extends Builder implements Serializable {
                 String version = TokenMacro.expandAll(build, listener, a.getVersion());
                 version = checkVersionOverride(build, listener, groupId, artifactId, version);
 
-                AetherResult result = aether.resolve(groupId, artifactId, classifier, extension, version);
-
-                List<File> resolvedFiles = result.getResolvedFiles();
-                for (File file : resolvedFiles) {
-
-                    String fileName = StringUtils.isBlank(targetFileName) ? file.getName() : targetFileName;
-                    FilePath source = new FilePath(file);
-                    String targetDir = StringUtils.isNotBlank(expandedTargetDirectory) ? expandedTargetDirectory + "/" : "";  
-                    FilePath target = new FilePath(build.getWorkspace(), targetDir + fileName);
-                    boolean wasDeleted = target.delete();
-                    if (wasDeleted) {
-                        logger.println("deleted " + target.toURI());
-                    }
-                    logger.println("copy " + file + " to " + target.toURI());
-                    source.copyTo(target);
-
-                }
-
-            } catch (DependencyCollectionException e) {
-                hasError = logError("failed collecting dependency info for " + a, logger, e);
-            } catch (ArtifactResolutionException e) {
-                hasError = logError("failed to resolve artifact for " + a, logger, e);
-            } catch (IOException e) {
-                hasError = logError("failed collecting dependency info for " + a, logger, e);
-            } catch (InterruptedException e) {
-                hasError = logError("interuppted failed to copy file for " + a, logger, e);
-            } catch (DependencyResolutionException e) {
-                hasError = logError("failed to resolve dependency for " + a, logger, e);
             } catch (Exception e) {
                 hasError = logError("failed to expand tokens for " + a, logger, e);
             }
-
+			**/
         }
         return hasError;
     }

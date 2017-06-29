@@ -1,7 +1,7 @@
 /**
  * 
  */
-package org.jvnet.hudson.plugins.repositoryconnector;
+package org.jvnet.hudson.plugins.artifactdownloader;
 
 import java.io.Serializable;
 
@@ -13,7 +13,7 @@ import org.kohsuke.stapler.DataBoundConstructor;
  * @author domi
  * 
  */
-public class Repository implements Serializable, Comparable {
+public class RepositoryConfig implements Serializable, Comparable {
 
     private static final long serialVersionUID = 1L;
 
@@ -25,7 +25,7 @@ public class Repository implements Serializable, Comparable {
     final private boolean isRepositoryManager;
 
     @DataBoundConstructor
-    public Repository(String id, String type, String url, String user, String password, boolean repositoryManager) {
+    public RepositoryConfig(String id, String type, String url, String user, String password, boolean repositoryManager) {
         this.id = id == null ? "central" : id;
         this.type = type == null ? "default" : type;
         this.url = url;
@@ -87,10 +87,10 @@ public class Repository implements Serializable, Comparable {
         if (obj == null) {
             return false;
         }
-        if (!(obj instanceof Repository)) {
+        if (!(obj instanceof RepositoryConfig)) {
             return false;
         }
-        Repository other = (Repository) obj;
+        RepositoryConfig other = (RepositoryConfig) obj;
         if (id == null) {
             if (other.id != null) {
                 return false;
@@ -130,6 +130,6 @@ public class Repository implements Serializable, Comparable {
     }
 
         public int compareTo(Object o) {
-            return id.compareTo(((Repository)o).getId());
+            return id.compareTo(((RepositoryConfig)o).getId());
         }
 }
