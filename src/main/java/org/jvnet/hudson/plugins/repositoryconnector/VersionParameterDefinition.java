@@ -40,8 +40,7 @@ public class VersionParameterDefinition extends
     private final String propertyName;
 
     @DataBoundConstructor
-    public VersionParameterDefinition(String repoid, String groupid,
-            String artifactid, String propertyName, String description) {
+    public VersionParameterDefinition(String repoid, String groupid, String artifactid, String propertyName, String description) {
         super((propertyName != null && !propertyName.isEmpty()) ? propertyName : groupid + "." + artifactid, description);
         this.repoid = repoid;
         this.groupid = groupid;
@@ -79,8 +78,8 @@ public class VersionParameterDefinition extends
                 // reverseorder to have the latest versions on top of the list
                 Collections.reverse(versionStrings);
                 // add the default parameters
-                versionStrings.add(0, "LATEST");
-                versionStrings.add(0, "RELEASE");
+                //versionStrings.add(0, "LATEST");
+                //versionStrings.add(0, "RELEASE");
             }
         }
         return versionStrings;
@@ -141,11 +140,17 @@ public class VersionParameterDefinition extends
             return repo;
         }
 
-        public Collection<Repository> getRepos() {
-            Collection<Repository> repos = null;
+        public Collection<Repository> getRepos(String repoId) {
+            List<Repository> repos = new ArrayList<>();
             RepositoryConfiguration repoConfig = RepositoryConfiguration.get();
-            if (repoConfig != null) {
-                repos = repoConfig.getRepos();
+            if(repoId!=null && repoId.length()>0) {
+            	for(Repository repo : repoConfig.getRepos()) {
+            		if(repo.getId().compareTo(repoId)==0) {
+            			repos.add(repo);
+            		}
+            	}
+            } else {
+                repos.addAll(repoConfig.getRepos());
                 log.fine("getRepos()=" + repos);
             }
             return repos;
@@ -155,8 +160,7 @@ public class VersionParameterDefinition extends
         public boolean configure(StaplerRequest req, JSONObject formData) {
             if (formData.has("repo")) {
                 try {
-                    List l = JSONArray.toList(
-                            formData.getJSONArray("repo"), Repository.class);
+                    List l = JSONArray.toList(formData.getJSONArray("repo"), Repository.class);
                     // TODO: ???
                 } catch (JSONException ex) {
                     Repository r = (Repository) JSONObject.toBean(
